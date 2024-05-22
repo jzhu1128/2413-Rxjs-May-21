@@ -398,7 +398,68 @@ setTimeout(() => {
 
 ---
 
-## Common rxjs errors
+##  Handling errors
 
+- The following example shows error handling
 
+```typescript
+import { Observable, of, throwError } from 'rxjs';
+import { catchError, map, retry } from 'rxjs/operators';
 
+// Create an observable that emits values and throws an error
+const source$ = new Observable<number>((observer) => {
+  observer.next(1);
+  observer.next(2);
+  observer.next(3);
+  observer.error('An error occurred!');
+  observer.next(4); // This will not be emitted
+  observer.complete();
+});
+
+// Handle the error using catchError and retry the observable 2 times
+source$
+  .pipe(
+    map(value => {
+      if (value === 2) {
+        throw new Error('Value 2 is not allowed!');
+      }
+      return value;
+    }),
+    retry(2), // Retry the observable 2 times before handling the error
+    catchError(err => {
+      console.error('Error caught:', err);
+      return of(-1); // Return a default value when an error occurs
+    })
+  )
+  .subscribe({
+    next(value) {
+      console.log('Received value:', value);
+    },
+    error(err) {
+      console.error('Subscription error:', err);
+    },
+    complete() {
+      console.log('Completed');
+    }
+  });
+
+```
+
+We use the pipe method to chain operators that transform and handle the observable's data:
+
+- map: This operator transforms the emitted values. If the value is 2, it throws an error. This simulates an error condition based on the data.
+  
+- retry(2): This operator retries the observable sequence up to 2 times if an error occurs. It's like saying, "If an error happens, try again up to two more times."
+
+- catchError: This operator catches any errors that occur in the observable chain. When an error is caught, it logs the error to the console and returns a new observable created by of(-1), which emits -1 and completes. This way, instead of the error propagating, we handle it and provide a fallback value.
+
+Code Execution
+
+1. The observable starts emitting values: 1, 2, 3.
+2. When 2 is emitted, the map operator throws an error because 2 is not allowed.
+3. The retry operator sees the error and restarts the observable sequence
+4. This happens up to 2 times.
+5. After the retries, if the error occurs again, the catchError operator catches it, logs it, and returns -1.
+6. The subscribe method prints the emitted values and handles the completion of the stream.
+
+--- 
