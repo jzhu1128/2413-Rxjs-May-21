@@ -249,3 +249,156 @@ observable.subscribe({
 console.log('just after subscribe');
 
 ```
+
+---
+
+
+## Custom Operators
+
+- A custom operator is a user-defined function that can transform or process an observable sequence
+- Custom operators allow developers to encapsulate specific behavior or logic that can be reused
+  
+- The operator is defined by:
+
+- Function Signature: A custom operator is typically a higher-order function that takes one or more arguments and returns a function
+- The returned function takes an observable as input and returns a new observable.
+
+- Implementation: Inside the custom operator, you can leverage existing RxJS operators like map, filter, mergeMap, etc., to define the transformation logic.
+
+- Usage: Once defined, the custom operator can be used just like any other RxJS operator by chaining it with the observable using the pipe method.
+
+
+```typescript
+import { Observable, OperatorFunction } from 'rxjs';
+import { map } from 'rxjs/operators';
+
+// Custom operator that multiplies each value by a given factor
+function multiplyBy(factor: number): OperatorFunction<number, number> {
+  return (source: Observable<number>): Observable<number> => {
+    return source.pipe(
+      map(value => value * factor)
+    );
+  };
+}
+
+// Usage
+const source$ = new Observable<number>(subscriber => {
+  subscriber.next(1);
+  subscriber.next(2);
+  subscriber.next(3);
+  subscriber.complete();
+});
+
+source$.pipe(
+  multiplyBy(2)
+).subscribe(value => console.log(value));
+
+// Output:
+// 2
+// 4
+// 6
+
+```
+
+## The Unsubscribe problem
+
+- The above code works fine but consider the following
+  
+```typescript
+import { interval, Observable ,OperatorFunction } from 'rxjs';
+import { map } from 'rxjs/operators';
+
+// Custom operator that multiplies each value by a given factor
+function multiplyBy(factor: number): OperatorFunction<number, number> {
+  return (source: Observable<number>): Observable<number> => {
+    return source.pipe(
+      map(value => value * factor)
+    );
+  };
+}
+
+
+const sub =interval(1000).pipe(
+  multiplyBy(2)
+).subscribe(value => console.log(value));
+
+setTimeout(() =>sub.unsubscribe(), 5000);
+
+```
+
+- The when we subscribe, the subscription is the execution environment for our custom operator
+- However, it is subscribed to the inner timer observable
+- When we unsubscribe, we only unsubscribe from the operator
+- The subscription the operator has on the timer (the execution environment) keeps on
+- This produces a resource leak
+
+- To avoid this we need to add an unsubscribe method to our operator what will unsubcribe it from the inner observable `timer`
+
+
+```typescript
+import { Observable, Subscriber, TeardownLogic, OperatorFunction, interval } from 'rxjs';
+import { map } from 'rxjs/operators';
+
+// Custom operator that multiplies each value by a given factor
+function multiplyBy(factor: number): OperatorFunction<number, number> {
+  return (source: Observable<number>): Observable<number> => {
+    return new Observable<number>((subscriber: Subscriber<number>) => {
+      // Subscribe to the source observable
+      const subscription = source.subscribe({
+        next(value) {
+          subscriber.next(value * factor);
+        },
+        error(err) {
+          subscriber.error(err);
+        },
+        complete() {
+          subscriber.complete();
+        }
+      });
+
+      // Return the teardown logic to clean up the subscription
+      return (): TeardownLogic => {
+        console.log("Inner unsubscribe");
+        subscription.unsubscribe();
+      };
+    });
+  };
+}
+
+// Usage
+const source$ = interval(1000); // Emits an ascending sequence of integers every 1000ms
+
+const subscription = source$.pipe(
+  multiplyBy(2)
+).subscribe(value => console.log(value));
+
+// Unsubscribe after a certain condition or time
+setTimeout(() => {
+  subscription.unsubscribe();
+  console.log('Unsubscribed');
+}, 5000);
+
+// Output:
+// 0 (multiplied by 2 = 0, printed after 1 second)
+// 2 (multiplied by 2 = 2, printed after 2 seconds)
+// 4 (multiplied by 2 = 4, printed after 3 seconds)
+// 6 (multiplied by 2 = 6, printed after 4 seconds)
+// Unsubscribed (printed after 5 seconds)
+
+```
+
+- Notice that we are explicitly managing the inner subscription
+  
+- Custom Operator Definition: The multiplyBy function is defined to return a new Observable that includes cleanup logic.
+
+- Teardown Logic: Inside the custom observable, we subscribe to the source observable and include the transformation logic. The teardown logic function ensures the subscription is properly cleaned up when unsubscribed.
+- Observable Creation: We use the interval observable, which emits an ascending sequence of integers every 1000ms.
+
+- Subscription and Unsubscribe: The custom operator multiplyBy is applied to the interval observable. We subscribe to the resulting observable, and set a timeout to unsubscribe after 5000ms (5 seconds), ensuring the resource cleanup logic is demonstrated.
+
+---
+
+## Common rxjs errors
+
+
+
